@@ -1,0 +1,15 @@
+{
+  "name": "amomimus-cron",
+  "version": "1.0.0",
+  "description": "Vercel Cron Job for Amomimus FCM Push Notifications",
+  "main": "api/cron.js",
+  "scripts": {
+    "start": "node api/cron.js"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.0.0"
+  },
+  "engines": {
+    "node": "20.x"
+  }
+}
