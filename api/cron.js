@@ -33,47 +33,67 @@ export default async function handler(req, res) {
       return res.status(200).json({ message: 'No tokens found' });
     }
 
-    // 2. Collect all valid FCM tokens
-    const tokens = [];
+    // 2. Dictionary for translations
+    const translations = {
+      id: { title: 'Amow Summary 📝', body: 'Waktunya cek rekap laporan Amomimus kamu nih! Yuk buka sekarang.' },
+      en: { title: 'Amow Summary 📝', body: 'Time to check your Amomimus summary report! Open it now.' },
+      ja: { title: 'アモウサマリー 📝', body: 'アモミマスのサマリーレポートをチェックする時間です！今すぐ開いてください。' },
+      de: { title: 'Amow Zusammenfassung 📝', body: 'Zeit, deinen Amomimus-Zusammenfassungsbericht zu überprüfen! Öffne ihn jetzt.' },
+      th: { title: 'สรุป Amow 📝', body: 'ถึงเวลาตรวจสอบรายงานสรุป Amomimus ของคุณแล้ว! เปิดเลย.' },
+      tamriel: { title: 'Amow Summary 📝', body: 'By the Nine! Your Amomimus missive has arrived. Break the seal now.' }
+    };
+
+    // 3. Group tokens by language
+    const groupedTokens = {};
     usersSnapshot.forEach(doc => {
       const userData = doc.data();
       if (userData.fcmToken) {
-        tokens.push(userData.fcmToken);
+        // Default to 'id' if language is missing or unknown
+        const lang = translations[userData.language] ? userData.language : 'id';
+        if (!groupedTokens[lang]) groupedTokens[lang] = [];
+        groupedTokens[lang].push(userData.fcmToken);
       }
     });
 
-    if (tokens.length === 0) {
+    if (Object.keys(groupedTokens).length === 0) {
       return res.status(200).json({ message: 'No valid tokens found in users' });
     }
 
-    // 3. Prepare the notification payload
-    const message = {
-      notification: {
-        title: 'Amow Summary 📝',
-        body: 'Waktunya cek rekap laporan Amomimus kamu nih! Yuk buka sekarang.',
-      },
-      tokens: tokens, // sendMulticast can handle up to 500 tokens at once
-    };
+    // 4. Send the multicast messages per language
+    let totalSent = 0;
+    let totalFailed = 0;
 
-    // 4. Send the multicast message
-    // If you have more than 500 tokens, you must chunk the array into 500-token batches
-    const response = await admin.messaging().sendEachForMulticast(message);
-    
-    console.log(`Successfully sent message: ${response.successCount} messages were sent successfully`);
-    if (response.failureCount > 0) {
-      const failedTokens = [];
-      response.responses.forEach((resp, idx) => {
-        if (!resp.success) {
-          failedTokens.push(tokens[idx]);
+    for (const [lang, tokens] of Object.entries(groupedTokens)) {
+      const message = {
+        notification: translations[lang],
+        tokens: tokens,
+      };
+
+      // Chunk tokens into batches of 500
+      for (let i = 0; i < tokens.length; i += 500) {
+        const batchTokens = tokens.slice(i, i + 500);
+        message.tokens = batchTokens;
+        
+        const response = await admin.messaging().sendEachForMulticast(message);
+        totalSent += response.successCount;
+        totalFailed += response.failureCount;
+
+        if (response.failureCount > 0) {
+          response.responses.forEach((resp, idx) => {
+            if (!resp.success) {
+              console.log(`Failed token (${lang}): ${batchTokens[idx]} - ${resp.error}`);
+            }
+          });
         }
-      });
-      console.log('List of tokens that caused failures: ' + failedTokens);
+      }
     }
 
+    console.log(`Successfully sent message: ${totalSent} sent, ${totalFailed} failed`);
+    
     return res.status(200).json({ 
       success: true, 
-      sent: response.successCount, 
-      failed: response.failureCount 
+      sent: totalSent, 
+      failed: totalFailed 
     });
 
   } catch (error) {
